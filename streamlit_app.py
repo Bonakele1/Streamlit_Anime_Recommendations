@@ -1,5 +1,6 @@
 import streamlit as st
 import io
+import mlflow
 import numpy as np  
 import pandas as pd  
 from datetime import datetime  
@@ -82,6 +83,7 @@ if section == "Importing Packages":
         # Code for importing packages (displayed as text)
         code = """
         import io
+        import mlflow
         import numpy as np  
         import pandas as pd  
         from datetime import datetime  
@@ -256,7 +258,7 @@ if section == "Data Cleaning":
                             # Fill missing genre and name with 'Unknown'
                             st.session_state.anime_df['genre'] = st.session_state.anime_df['genre'].fillna('Unknown')
                             st.session_state.anime_df['name'] = st.session_state.anime_df['name'].fillna('Unknown')
-
+                            st.session_state.anime_df['episodes'] = pd.to_numeric(st.session_state.anime_df['episodes'], errors='coerce')
                             st.success("✅ Missing values handled successfully!")
 
                             # Show updated missing values
@@ -281,40 +283,66 @@ if section == "Data Cleaning":
             - rating: Replace Null-ratings entries.
             """)
 
-            # Button to clean data
-            Null_data_button = st.button("Null Data", key="null_data")
+            if "anime_df" in st.session_state and "ratings_df" in st.session_state and "test_df" in st.session_state:
+                datasets = {
+                    "Anime": st.session_state.anime_df,
+                    "Ratings": st.session_state.ratings_df,
+                    "Test": st.session_state.test_df
+                }
+            else:
+                datasets = None
+                st.error("❌ Data is not loaded. Please load the dataset first.")
 
-            if Null_data_button:
+            # --- Check Missing Values ---
+            Null_data_button = st.button("Check Missing Values", key="null_check")
+            if check_null_values_button and datasets:
                 try:
-                    if "anime_df" in st.session_state:
-                        df = st.session_state.anime_df 
-                        
-                        # --- Replace Null 'type' entries ---
-                        df['type'] = df['type'].replace('', 'TV').fillna('TV')
+                    for name, df in datasets.items():
+                        display_missing_values(df, name)
+                    st.success("✅ Missing values displayed successfully!")
+                except Exception as e:
+                    st.error(f"⚠️ Error checking missing values: {e}")
+
+            if Null_data_button and datasets:
+                try:
+                    df = datasets["Anime"]  # Use the already defined datasets
+    
+                    df['type'] = df['type'].replace('', 'TV').fillna('TV')
 
                         # --- Replace Null 'genre' entries based on 'type' ---
-                        def assign_default_genre(row):
-                            if pd.isna(row['genre']) or row['genre'] == '':
-                                default_genres = {
-                                    'Movie': 'Comedy',
-                                    'TV': 'Comedy',
-                                    'OVA': 'Hentai',
-                                    'Special': 'Comedy',
-                                    'Music': 'Music',
-                                    'ONA': 'Comedy'
-                                }
-                                return default_genres.get(row['type'], 'Unknown')
-                            return row['genre']
+                    def assign_default_genre(row):
+                        if pd.isna(row['genre']) or row['genre'] == '':
+                            default_genres = {
+                                'Movie': 'Comedy',
+                                'TV': 'Comedy',
+                                'OVA': 'Hentai',
+                                'Special': 'Comedy',
+                                'Music': 'Music',
+                                'ONA': 'Comedy'
+                            }
+                            return default_genres.get(row['type'], 'Unknown')
+                        return row['genre']
 
-                        df['genre'] = df.apply(assign_default_genre, axis=1)
+                    df['genre'] = df.apply(assign_default_genre, axis=1)
 
-                        # --- Replace Null 'rating' entries with type-wise mean ---
-                        df['rating'] = df['rating'].fillna(df.groupby('type')['rating'].transform('mean'))
+                    # --- Replace Null 'rating' entries with type-wise mean ---
+                    df['rating'] = df['rating'].fillna(df.groupby('type')['rating'].transform('mean'))
 
-                        # Save back to session state
-                        st.session_state.anime_df = df  
+                    def get_mode(series):
+                        mode_values = series.mode()
+                        return mode_values[0] if not mode_values.empty else np.nan
 
-                        st.success("✅ Null values handled successfully!")
+                    st.session_state.anime_df['episodes'] = st.session_state.anime_df['episodes'].fillna(
+                        st.session_state.anime_df.groupby('type')['episodes'].transform(get_mode)
+                    )
+
+                    # Ensure 'episodes' is numeric
+                    st.session_state.anime_df['episodes'] = pd.to_numeric(st.session_state.anime_df['episodes'], errors='coerce')     
+
+                    # Save back to session state
+                    st.session_state.anime_df = df  
+
+                    st.success("✅ Null values handled successfully!")
 
                     # Show updated missing values
                     for name, df in datasets.items():
@@ -640,3 +668,95 @@ if section == "Exploratory Data Analysis (EDA)":
                 # Display the correlation matrix
                 st.write("#### Correlation Matrix")
                 st.dataframe(correlation_matrix) 
+if section == "Data Preprocessing":
+            st.title("Data Preprocessing")
+            # Initialize session state if not already done
+            if 'preprocessed_data' not in st.session_state:
+                st.session_state.preprocessed_data = None
+
+            # Load dataset
+            st.write("### Anime Recommendation Preprocessing")
+
+            if "data_loaded" in st.session_state and st.session_state.data_loaded:
+                ratings_df = st.session_state.ratings_df
+                anime_df = st.session_state.anime_df
+
+            merged_df = pd.merge(ratings_df, anime_df[['anime_id', 'rating', 'episodes', 'members']], on='anime_id', how='left')
+            merged_df = merged_df.rename(columns={
+                'rating_x': 'user_rating',
+                'rating_y': 'average_anime_rating'
+            })
+
+            if not merged_df.empty and not anime_df.empty:
+                df = merged_df.copy()
+                
+                # Scale numeric columns
+                numeric_cols = ['episodes', 'members']
+                scaler = MinMaxScaler()
+                df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+
+                # Scale the target variable (ratings)
+                scaler = MinMaxScaler(feature_range=(0, 1))
+                df['scaled_score'] = scaler.fit_transform(df[['average_anime_rating']])
+
+                # Encode user and anime IDs
+                user_encoder = LabelEncoder()
+                df["user_encoded"] = user_encoder.fit_transform(df["user_id"])
+                num_users = len(user_encoder.classes_)
+
+                anime_encoder = LabelEncoder()
+                df["anime_encoded"] = anime_encoder.fit_transform(df["anime_id"])
+                num_animes = len(anime_encoder.classes_)
+                
+                # Split data into training and test sets
+                X = df[['user_id', 'anime_id']].values
+                y = df["scaled_score"].values
+                test_set_size = 10000
+                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_set_size, random_state=73)
+                
+                X_train_array = [X_train[:, 0], X_train[:, 1]]
+                X_test_array = [X_test[:, 0], X_test[:, 1]]
+                
+                # Function to preprocess features
+                def preprocess_features(df):
+                    combined_features = df[["genre", "type", "episodes"]].fillna("").astype(str)
+                    combined_features = combined_features.apply(lambda x: ' '.join(x), axis=1)
+                    return combined_features
+
+                rec_data = anime_df.drop_duplicates(subset="name", keep="first").reset_index(drop=True)
+                combined_features = preprocess_features(rec_data)
+
+                # TF-IDF Vectorization
+                tfv = TfidfVectorizer(
+                    min_df=3, max_features=None, strip_accents="unicode",
+                    analyzer="word", token_pattern=r"\w{1,}", ngram_range=(1, 3),
+                    stop_words="english"
+                )
+                tfidf_matrix = tfv.fit_transform(combined_features)
+                cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+                
+                # Surprise dataset preparation
+                reader = Reader(rating_scale=(1, 10))
+                data = Dataset.load_from_df(df[['user_id', 'anime_id', 'scaled_score']], reader)
+                trainset, testset = surprise_train_test_split(data, test_size=0.2, random_state=42)
+                
+                # Store preprocessed data in session state
+                st.session_state.preprocessed_data = {
+                    "df": df,
+                    "X_train": X_train_array,
+                    "X_test": X_test_array,
+                    "y_train": y_train,
+                    "y_test": y_test,
+                    "cosine_sim": cosine_sim,
+                    "trainset": trainset,
+                    "testset": testset
+                }
+                
+                st.success("Data preprocessing complete and stored in session state.")
+
+                # Initialize MLflow
+                mlflow.set_experiment("Anime_Recommendation_Collaborative_Filtering")
+
+
+
+
