@@ -1,12 +1,20 @@
 import streamlit as st
 import io
+import os
+import pickle
 import mlflow
+from surprise import SVD
+from surprise import accuracy
+from surprise.model_selection import cross_validate
 import numpy as np  
-import pandas as pd  
+import pandas as pd
+from surprise import Dataset
+from surprise.model_selection import GridSearchCV  
 from datetime import datetime  
 import matplotlib.pyplot as plt  
 import seaborn as sns  
-import plotly.express as px  
+import plotly.express as px
+
 import plotly.graph_objects as go  
 import plotly.figure_factory as ff  
 from plotly.offline import init_notebook_mode, iplot  
@@ -42,7 +50,7 @@ def main():
 
     # Creating sidebar with selection box -
     # you can create multiple pages this way
-options =  ["Project Introduction", "Importing Packages", "Data loading and Inspection", "Data Cleaning", "Exploratory Data Analysis (EDA)","Data Preprocessing","Model Development", "Model Evaluation", "Model Deployment", "Conclusion and Recomendations"]
+options =  ["Project Introduction", "Importing Packages", "Data loading and Inspection", "Data Cleaning", "Exploratory Data Analysis (EDA)","Data Preprocessing","Model Development", "Making Recomendations", "Model Deployment", "Conclusion and Recomendations"]
 section = st.sidebar.selectbox("Options", options)
     
     #### Introduction section     
@@ -81,15 +89,22 @@ if section == "Importing Packages":
         st.header("Importing Packages")
         
         # Code for importing packages (displayed as text)
-        code = """
+        code ="""
+        import streamlit as st
         import io
         import mlflow
+        from surprise import SVD
+        from surprise import accuracy
+        from surprise.model_selection import cross_validate
+        from surprise import Dataset
+        from surprise.model_selection import GridSearchCV
         import numpy as np  
         import pandas as pd  
         from datetime import datetime  
         import matplotlib.pyplot as plt  
         import seaborn as sns  
-        import plotly.express as px  
+        import plotly.express as px
+
         import plotly.graph_objects as go  
         import plotly.figure_factory as ff  
         from plotly.offline import init_notebook_mode, iplot  
@@ -114,18 +129,16 @@ if section == "Importing Packages":
         from surprise.model_selection import train_test_split as surprise_train_test_split
         from math import sqrt  
         import warnings  
-        warnings.filterwarnings('ignore')
+        warnings.filterwarnings('ignore') 
         """
         st.code(code, language='python')
 
-        # Add button to run the code
+# Add a button to run the code
         run_button = st.button("Run imports")
-        
+
         if run_button:
-            try:
-                st.success("Importing Packages completed successfully!")
-            except Exception as e:
-                st.error(f"Error executing code: {e}")
+            st.write("Imports executed successfully!")
+
     # --- Loading Data Section ---
 if section == "Data loading and Inspection":
         st.header("Loading Data and Inspection")
@@ -699,18 +712,11 @@ if section == "Data Preprocessing":
                 scaler = MinMaxScaler(feature_range=(0, 1))
                 df['scaled_score'] = scaler.fit_transform(df[['average_anime_rating']])
 
-                # Encode user and anime IDs
-                user_encoder = LabelEncoder()
-                df["user_encoded"] = user_encoder.fit_transform(df["user_id"])
-                num_users = len(user_encoder.classes_)
-
-                anime_encoder = LabelEncoder()
-                df["anime_encoded"] = anime_encoder.fit_transform(df["anime_id"])
-                num_animes = len(anime_encoder.classes_)
                 
                 # Split data into training and test sets
                 X = df[['user_id', 'anime_id']].values
                 y = df["scaled_score"].values
+
                 test_set_size = 10000
                 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_set_size, random_state=73)
                 
@@ -728,16 +734,32 @@ if section == "Data Preprocessing":
 
                 # TF-IDF Vectorization
                 tfv = TfidfVectorizer(
-                    min_df=3, max_features=None, strip_accents="unicode",
-                    analyzer="word", token_pattern=r"\w{1,}", ngram_range=(1, 3),
+                    min_df=3, 
+                    max_features=None, 
+                    strip_accents="unicode",
+                    analyzer="word", 
+                    token_pattern=r"\w{1,}", 
+                    ngram_range=(1, 3),
                     stop_words="english"
                 )
+
                 tfidf_matrix = tfv.fit_transform(combined_features)
                 cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+
+                # Encode user and anime IDs
+                user_encoder = LabelEncoder()
+                df["user_encoded"] = user_encoder.fit_transform(df["user_id"])
+                num_users = len(user_encoder.classes_)
+
+                anime_encoder = LabelEncoder()
+                df["anime_encoded"] = anime_encoder.fit_transform(df["anime_id"])
+                num_animes = len(anime_encoder.classes_)
                 
                 # Surprise dataset preparation
+                df = df.sample(frac=1, random_state=100).reset_index(drop=True)
                 reader = Reader(rating_scale=(1, 10))
-                data = Dataset.load_from_df(df[['user_id', 'anime_id', 'scaled_score']], reader)
+                data = Dataset.load_from_df(df[['user_id', 'anime_id', 'user_rating']], reader)
+
                 trainset, testset = surprise_train_test_split(data, test_size=0.2, random_state=42)
                 
                 # Store preprocessed data in session state
@@ -756,7 +778,178 @@ if section == "Data Preprocessing":
 
                 # Initialize MLflow
                 mlflow.set_experiment("Anime_Recommendation_Collaborative_Filtering")
+if section == "Model Development":
+            st.title("Model Development")
 
+            mlflow.set_tracking_uri("http://127.0.0.1:5000")  # Adjust this if your MLflow server is remote
+
+            @st.cache_resource  # Cache to speed up loading
+            def load_model(experiment_name, model_filename="svd_model.pkl"):
+                # Get experiment
+                experiment = mlflow.get_experiment_by_name(experiment_name)
+                if not experiment:
+                    st.error(f"Experiment '{experiment_name}' not found.")
+                    return None
+
+                # Get latest completed run
+                runs = mlflow.search_runs(experiment_ids=[experiment.experiment_id], filter_string="status='FINISHED'")
+                if runs.empty:
+                    st.error("No successful runs found for this experiment.")
+                    return None
+
+                latest_run = runs.iloc[0]
+                
+                # Get the artifact path
+                artifact_path = f"runs:/{latest_run.run_id}/{model_filename}"
+
+                # Download the artifact (fix path issue)
+                local_path = mlflow.artifacts.download_artifacts(artifact_path)
+
+                # Check if file exists
+                if not os.path.exists(local_path):
+                    st.error(f"Model file '{model_filename}' not found in MLflow.")
+                    return None
+
+                # Load the model
+                with open(local_path, "rb") as model_file:
+                    model = pickle.load(model_file)
+
+                return model
+
+            if "model" not in st.session_state:
+                # Load model and store it in session_state
+                model = load_model(experiment_name="SVD_Model")
+                if model:
+                    st.session_state.model = model  # Save model in session_state
+                    st.success("✅ Model successfully loaded and saved in session_state.")
+                else:
+                    st.error("⚠️ Model could not be loaded. Check MLflow server and logs.")
+
+
+if section == "Making Recomendations":
+            st.title("Making Recomendations") 
+
+            def give_rec(title):
+                # Ensure preprocessed data is available
+                if "preprocessed_data" not in st.session_state:
+                    st.error("❌ Preprocessed data not found. Please preprocess the data first.")
+                    return None
+
+                rec_data = st.session_state.anime_df
+                cosine_sim = st.session_state.preprocessed_data["cosine_sim"]
+
+                # Ensure the title exists in the dataset
+                if title not in rec_data["name"].values:
+                    st.warning(f"❌ '{title}' not found in the dataset!")
+                    return None
+
+                # Create indices for anime lookup
+                indices = pd.Series(rec_data.index, index=rec_data['name']).drop_duplicates()
+                
+                # Get the index of the anime
+                idx = indices[title]
+
+                # Get similarity scores
+                sim_scores = list(enumerate(cosine_sim[idx]))
+
+                # Filter out anime with unknown ratings
+                valid_scores = [x for x in sim_scores if rec_data.iloc[x[0]]['rating'] != "UNKNOWN"]
+
+                # Sort by similarity and rating
+                sorted_scores = sorted(valid_scores, key=lambda x: (x[1], rec_data.iloc[x[0]]['rating']), reverse=True)
+
+                # Get top 10 recommendations (excluding itself)
+                top_indices = [i[0] for i in sorted_scores if i[0] != idx][:10]
+
+                # Return recommendations as a DataFrame
+                return pd.DataFrame({
+                    "Anime Name": rec_data["name"].iloc[top_indices].values,
+                    "Genre": rec_data["genre"].iloc[top_indices].values,
+                    "Rating": rec_data["rating"].iloc[top_indices].values
+                })
+
+            st.header("🎥 Content-Based Anime Recommendation System")
+
+            # Ensure preprocessed data exists
+            if "preprocessed_data" in st.session_state:
+                st.subheader("🔍 Find Similar Anime")
+
+                # User input for anime selection
+                anime_name = st.selectbox("Select an Anime:", st.session_state.anime_df['name'].unique())
+
+                # Button to generate recommendations
+                if st.button("Get Recommendations"):
+                    recommendations = give_rec(anime_name)
+
+                    if recommendations is not None:
+                        st.subheader(f"📌 Recommended Anime for: {anime_name}")
+                        st.dataframe(recommendations)
+                    else:
+                        st.warning("❌ No recommendations found.")
+            else:
+                st.error("⚠️ Please load and preprocess data first!")   
+
+
+            def get_collab_recommendations(user_id, anime_df, model, n_recommendations=10):
+                # Ensure the model and dataset exist
+                if model is None or anime_df.empty:
+                    st.error("Model or anime data is missing.")
+                    return None
+
+                # Get all unique anime IDs
+                all_anime_ids = anime_df["anime_id"].unique()
+
+                # Predict ratings for all anime not yet rated by the user
+                predictions = []
+                for anime_id in all_anime_ids:
+                    pred = model.predict(user_id, anime_id)
+                    predictions.append((anime_id, pred.est))  # (anime_id, estimated rating)
+
+                # Sort by predicted rating in descending order
+                predictions.sort(key=lambda x: x[1], reverse=True)
+
+                # Get top N recommendations
+                top_anime_ids = [anime_id for anime_id, _ in predictions[:n_recommendations]]
+
+                # Retrieve anime details
+                recommended_anime = anime_df[anime_df["anime_id"].isin(top_anime_ids)][["name", "genre", "rating"]]
+
+                return recommended_anime 
+            
+            if "model" not in st.session_state:
+                st.session_state.model = load_model(experiment_name="SVD_Model")
+
+            # Step 3: Use the model
+            model = st.session_state.model  # Access globally loaded model
+
+            # Step 4: Proceed with your Streamlit logic
+            st.header("🤖 Collaborative Filtering Anime Recommender")
+
+            if model is None:
+                st.error("⚠️ Model could not be loaded. Check MLflow server and logs.")
+            else:
+                st.success("✅ Model successfully loaded.")
+
+                if "anime_df" in st.session_state:
+                    anime_df = st.session_state.anime_df  # Load the anime dataset
+
+                    st.subheader("🔍 Get Personalized Anime Recommendations")
+
+                    # User input for ID
+                    user_id = st.number_input("Enter User ID:", min_value=1, step=1)
+
+                    # Button to generate recommendations
+                    if st.button("Get Collab Recommendations"):
+                        recommendations = get_collab_recommendations(user_id, anime_df, model)
+
+                        if recommendations is not None and not recommendations.empty:
+                            st.subheader(f"📌 Recommendations for User {user_id}")
+                            st.dataframe(recommendations)
+                        else:
+                            st.warning("❌ No recommendations found.")
+                else:
+                    st.error("⚠️ Please ensure the anime dataset is loaded.")
+                   
 
 
 
