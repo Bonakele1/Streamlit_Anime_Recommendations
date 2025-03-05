@@ -684,107 +684,33 @@ if section == "Exploratory Data Analysis (EDA)":
 if section == "Data Preprocessing":
             st.title("Data Preprocessing")
             # Initialize session state if not already done
+            preprocessed_data_path = "C:\\Users\\bonas\\Downloads\\preprocessed_data.pkl"
+
+            # Check if the preprocessed data is already loaded in session state
             if 'preprocessed_data' not in st.session_state:
-                st.session_state.preprocessed_data = None
+                # Load the pickle file and store the data in session state
+                try:
+                    with open(preprocessed_data_path, 'rb') as f:
+                        preprocessed_data = pickle.load(f)
+                    # Store the preprocessed data in session state for later use
+                    st.session_state.preprocessed_data = preprocessed_data
+                    st.success("Preprocessed data loaded successfully from pickle file.")
+                except Exception as e:
+                    st.error(f"Error loading preprocessed data: {e}")
+            else:
+                st.success("Preprocessed data already loaded.")
 
-            # Load dataset
-            st.write("### Anime Recommendation Preprocessing")
+            # Now you can access the preprocessed data from session state
+            preprocessed_data = st.session_state.preprocessed_data
 
-            if "data_loaded" in st.session_state and st.session_state.data_loaded:
-                ratings_df = st.session_state.ratings_df
-                anime_df = st.session_state.anime_df
-
-            merged_df = pd.merge(ratings_df, anime_df[['anime_id', 'rating', 'episodes', 'members']], on='anime_id', how='left')
-            merged_df = merged_df.rename(columns={
-                'rating_x': 'user_rating',
-                'rating_y': 'average_anime_rating'
-            })
-
-            if not merged_df.empty and not anime_df.empty:
-                df = merged_df.copy()
-                
-                # Scale numeric columns
-                numeric_cols = ['episodes', 'members']
-                scaler = MinMaxScaler()
-                df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
-
-                # Scale the target variable (ratings)
-                scaler = MinMaxScaler(feature_range=(0, 1))
-                df['scaled_score'] = scaler.fit_transform(df[['average_anime_rating']])
-
-                
-                # Split data into training and test sets
-                X = df[['user_id', 'anime_id']].values
-                y = df["scaled_score"].values
-
-                test_set_size = 10000
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_set_size, random_state=73)
-                
-                X_train_array = [X_train[:, 0], X_train[:, 1]]
-                X_test_array = [X_test[:, 0], X_test[:, 1]]
-                
-                # Function to preprocess features
-                def preprocess_features(df):
-                    combined_features = df[["genre", "type", "episodes"]].fillna("").astype(str)
-                    combined_features = combined_features.apply(lambda x: ' '.join(x), axis=1)
-                    return combined_features
-
-                rec_data = anime_df.drop_duplicates(subset="name", keep="first").reset_index(drop=True)
-                combined_features = preprocess_features(rec_data)
-
-                # TF-IDF Vectorization
-                tfv = TfidfVectorizer(
-                    min_df=3, 
-                    max_features=None, 
-                    strip_accents="unicode",
-                    analyzer="word", 
-                    token_pattern=r"\w{1,}", 
-                    ngram_range=(1, 3),
-                    stop_words="english"
-                )
-
-                tfidf_matrix = tfv.fit_transform(combined_features)
-                cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
-
-                # Encode user and anime IDs
-                user_encoder = LabelEncoder()
-                df["user_encoded"] = user_encoder.fit_transform(df["user_id"])
-                num_users = len(user_encoder.classes_)
-
-                anime_encoder = LabelEncoder()
-                df["anime_encoded"] = anime_encoder.fit_transform(df["anime_id"])
-                num_animes = len(anime_encoder.classes_)
-                
-                # Surprise dataset preparation
-                df = df.sample(frac=1, random_state=100).reset_index(drop=True)
-                reader = Reader(rating_scale=(1, 10))
-                data = Dataset.load_from_df(df[['user_id', 'anime_id', 'user_rating']], reader)
-
-                trainset, testset = surprise_train_test_split(data, test_size=0.2, random_state=42)
-                
-                # Store preprocessed data in session state
-                st.session_state.preprocessed_data = {
-                    "df": df,
-                    "X_train": X_train_array,
-                    "X_test": X_test_array,
-                    "y_train": y_train,
-                    "y_test": y_test,
-                    "cosine_sim": cosine_sim,
-                    "trainset": trainset,
-                    "testset": testset
-                }
-                
-                st.success("Data preprocessing complete and stored in session state.")
-
-                # Initialize MLflow
-                mlflow.set_experiment("Anime_Recommendation_Collaborative_Filtering")
+            
 if section == "Model Development":
             st.title("Model Development")
 
             mlflow.set_tracking_uri("http://127.0.0.1:5000")  # Adjust this if your MLflow server is remote
 
             @st.cache_resource  # Cache to speed up loading
-            def load_model(experiment_name, model_filename="svd_model.pkl"):
+            def load_model(experiment_name, model_filename="knnbaseline_model.pkl"):
                 # Get experiment
                 experiment = mlflow.get_experiment_by_name(experiment_name)
                 if not experiment:
@@ -818,7 +744,7 @@ if section == "Model Development":
 
             if "model" not in st.session_state:
                 # Load model and store it in session_state
-                model = load_model(experiment_name="SVD_Model")
+                model = load_model(experiment_name="KNNBaseline_Model")
                 if model:
                     st.session_state.model = model  # Save model in session_state
                     st.success("✅ Model successfully loaded and saved in session_state.")
@@ -829,127 +755,191 @@ if section == "Model Development":
 if section == "Making Recomendations":
             st.title("Making Recomendations") 
 
-            def give_rec(title):
-                # Ensure preprocessed data is available
-                if "preprocessed_data" not in st.session_state:
-                    st.error("❌ Preprocessed data not found. Please preprocess the data first.")
-                    return None
+            Type =  ["Content-Based Anime Recommendation System", "Collaborative Filtering Anime Recommender", "Hybrid Anime Recommender (Collab & Content-Based)"]
+            Recommendation_option = st.sidebar.selectbox("Recommender type", Type)
 
-                rec_data = st.session_state.anime_df
-                cosine_sim = st.session_state.preprocessed_data["cosine_sim"]
+            if Recommendation_option== "Content-Based Anime Recommendation System":
+                def give_rec(title):
+                    # Ensure preprocessed data is available
+                    if "preprocessed_data" not in st.session_state:
+                        st.error("❌ Preprocessed data not found. Please preprocess the data first.")
+                        return None
 
-                # Ensure the title exists in the dataset
-                if title not in rec_data["name"].values:
-                    st.warning(f"❌ '{title}' not found in the dataset!")
-                    return None
+                    rec_data = st.session_state.anime_df
+                    cosine_sim = st.session_state.preprocessed_data["cosine_sim"]
 
-                # Create indices for anime lookup
-                indices = pd.Series(rec_data.index, index=rec_data['name']).drop_duplicates()
-                
-                # Get the index of the anime
-                idx = indices[title]
+                    # Ensure the title exists in the dataset
+                    if title not in rec_data["name"].values:
+                        st.warning(f"❌ '{title}' not found in the dataset!")
+                        return None
 
-                # Get similarity scores
-                sim_scores = list(enumerate(cosine_sim[idx]))
+                    # Create indices for anime lookup
+                    indices = pd.Series(rec_data.index, index=rec_data['name']).drop_duplicates()
+                    
+                    # Get the index of the anime
+                    idx = indices[title]
 
-                # Filter out anime with unknown ratings
-                valid_scores = [x for x in sim_scores if rec_data.iloc[x[0]]['rating'] != "UNKNOWN"]
+                    # Get similarity scores
+                    sim_scores = list(enumerate(cosine_sim[idx]))
 
-                # Sort by similarity and rating
-                sorted_scores = sorted(valid_scores, key=lambda x: (x[1], rec_data.iloc[x[0]]['rating']), reverse=True)
+                    # Filter out anime with unknown ratings
+                    valid_scores = [x for x in sim_scores if rec_data.iloc[x[0]]['rating'] != "UNKNOWN"]
 
-                # Get top 10 recommendations (excluding itself)
-                top_indices = [i[0] for i in sorted_scores if i[0] != idx][:10]
+                    # Sort by similarity and rating
+                    sorted_scores = sorted(valid_scores, key=lambda x: (x[1], rec_data.iloc[x[0]]['rating']), reverse=True)
 
-                # Return recommendations as a DataFrame
-                return pd.DataFrame({
-                    "Anime Name": rec_data["name"].iloc[top_indices].values,
-                    "Genre": rec_data["genre"].iloc[top_indices].values,
-                    "Rating": rec_data["rating"].iloc[top_indices].values
-                })
+                    # Get top 10 recommendations (excluding itself)
+                    top_indices = [i[0] for i in sorted_scores if i[0] != idx][:10]
 
-            st.header("🎥 Content-Based Anime Recommendation System")
+                    # Return recommendations as a DataFrame
+                    return pd.DataFrame({
+                        "Anime Name": rec_data["name"].iloc[top_indices].values,
+                        "Genre": rec_data["genre"].iloc[top_indices].values,
+                        "Rating": rec_data["rating"].iloc[top_indices].values
+                    })
 
-            # Ensure preprocessed data exists
-            if "preprocessed_data" in st.session_state:
-                st.subheader("🔍 Find Similar Anime")
+                st.header("🎥 Content-Based Anime Recommendation System")
 
-                # User input for anime selection
-                anime_name = st.selectbox("Select an Anime:", st.session_state.anime_df['name'].unique())
+                # Ensure preprocessed data exists
+                if "preprocessed_data" in st.session_state:
+                    st.subheader("🔍 Find Similar Anime")
 
-                # Button to generate recommendations
-                if st.button("Get Recommendations"):
-                    recommendations = give_rec(anime_name)
-
-                    if recommendations is not None:
-                        st.subheader(f"📌 Recommended Anime for: {anime_name}")
-                        st.dataframe(recommendations)
-                    else:
-                        st.warning("❌ No recommendations found.")
-            else:
-                st.error("⚠️ Please load and preprocess data first!")   
-
-
-            def get_collab_recommendations(user_id, anime_df, model, n_recommendations=10):
-                # Ensure the model and dataset exist
-                if model is None or anime_df.empty:
-                    st.error("Model or anime data is missing.")
-                    return None
-
-                # Get all unique anime IDs
-                all_anime_ids = anime_df["anime_id"].unique()
-
-                # Predict ratings for all anime not yet rated by the user
-                predictions = []
-                for anime_id in all_anime_ids:
-                    pred = model.predict(user_id, anime_id)
-                    predictions.append((anime_id, pred.est))  # (anime_id, estimated rating)
-
-                # Sort by predicted rating in descending order
-                predictions.sort(key=lambda x: x[1], reverse=True)
-
-                # Get top N recommendations
-                top_anime_ids = [anime_id for anime_id, _ in predictions[:n_recommendations]]
-
-                # Retrieve anime details
-                recommended_anime = anime_df[anime_df["anime_id"].isin(top_anime_ids)][["name", "genre", "rating"]]
-
-                return recommended_anime 
-            
-            if "model" not in st.session_state:
-                st.session_state.model = load_model(experiment_name="SVD_Model")
-
-            # Step 3: Use the model
-            model = st.session_state.model  # Access globally loaded model
-
-            # Step 4: Proceed with your Streamlit logic
-            st.header("🤖 Collaborative Filtering Anime Recommender")
-
-            if model is None:
-                st.error("⚠️ Model could not be loaded. Check MLflow server and logs.")
-            else:
-                st.success("✅ Model successfully loaded.")
-
-                if "anime_df" in st.session_state:
-                    anime_df = st.session_state.anime_df  # Load the anime dataset
-
-                    st.subheader("🔍 Get Personalized Anime Recommendations")
-
-                    # User input for ID
-                    user_id = st.number_input("Enter User ID:", min_value=1, step=1)
+                    # User input for anime selection
+                    anime_name = st.selectbox("Select an Anime:", st.session_state.anime_df['name'].unique())
 
                     # Button to generate recommendations
-                    if st.button("Get Collab Recommendations"):
-                        recommendations = get_collab_recommendations(user_id, anime_df, model)
+                    if st.button("Get Recommendations"):
+                        recommendations = give_rec(anime_name)
 
-                        if recommendations is not None and not recommendations.empty:
-                            st.subheader(f"📌 Recommendations for User {user_id}")
+                        if recommendations is not None:
+                            st.subheader(f"📌 Recommended Anime for: {anime_name}")
                             st.dataframe(recommendations)
                         else:
                             st.warning("❌ No recommendations found.")
                 else:
-                    st.error("⚠️ Please ensure the anime dataset is loaded.")
-                   
+                    st.error("⚠️ Please load and preprocess data first!")   
 
+            if Recommendation_option == "Collaborative Filtering Anime Recommender":
+                def get_collab_recommendations(user_id, anime_df, model, n_recommendations=10):
+                    # Ensure the model and dataset exist
+                    if model is None or anime_df.empty:
+                        st.error("Model or anime data is missing.")
+                        return None
+
+                    # Get all unique anime IDs
+                    all_anime_ids = anime_df["anime_id"].unique()
+
+                    # Predict ratings for all anime not yet rated by the user
+                    predictions = []
+                    for anime_id in all_anime_ids:
+                        pred = model.predict(user_id, anime_id)
+                        predictions.append((anime_id, pred.est))  # (anime_id, estimated rating)
+
+                    # Sort by predicted rating in descending order
+                    predictions.sort(key=lambda x: x[1], reverse=True)
+
+                    # Get top N recommendations
+                    top_anime_ids = [anime_id for anime_id, _ in predictions[:n_recommendations]]
+
+                    # Retrieve anime details
+                    recommended_anime = anime_df[anime_df["anime_id"].isin(top_anime_ids)][["name", "genre", "rating"]]
+
+                    return recommended_anime 
+                
+                if "model" not in st.session_state:
+                    st.session_state.model = load_model(experiment_name="KNNBaseline_Model")
+
+                # Step 3: Use the model
+                model = st.session_state.model  # Access globally loaded model
+
+                # Step 4: Proceed with your Streamlit logic
+                st.header("🤖 Collaborative Filtering Anime Recommender")
+
+                if model is None:
+                    st.error("⚠️ Model could not be loaded. Check MLflow server and logs.")
+                else:
+
+                    if "anime_df" in st.session_state:
+                        anime_df = st.session_state.anime_df  # Load the anime dataset
+
+                        st.subheader("🔍 Get Personalized Anime Recommendations")
+
+                        # User input for ID
+                        user_id = st.number_input("Enter User ID:", min_value=1, step=1)
+
+                        # Button to generate recommendations
+                        if st.button("Get Collab Recommendations"):
+                            recommendations = get_collab_recommendations(user_id, anime_df, model)
+
+                            if recommendations is not None and not recommendations.empty:
+                                st.subheader(f"📌 Recommendations for User {user_id}")
+                                st.dataframe(recommendations)
+                            else:
+                                st.warning("❌ No recommendations found.")
+                    else:
+                        st.error("⚠️ Please ensure the anime dataset is loaded.")
+
+            if Recommendation_option== "Hybrid Anime Recommender (Collab & Content-Based)":
+                if "model" not in st.session_state:
+                    st.session_state.model = load_model(experiment_name="SVD_Model")
+        
+
+
+                def get_recommendations(user_id, anime_df, model, Watch_threshhold=20):
+                    """
+                    Generate recommendations for a given user ID using a hybrid approach.
+                    
+                    If the user is a frequent watcher, use collaborative filtering.
+                    If the user is a casual watcher, use content-based filtering.
+                    """
+                    # Get user history
+                    user_ratings = st.session_state.ratings_df[st.session_state.ratings_df["user_id"] == user_id]
+
+                    # Check how many anime the user has rated
+                    num_rated = len(user_ratings)
+
+                    if num_rated > Watch_threshhold:
+                        st.info("User is a frequent watcher. Using **collaborative filtering** (SVD model).")
+                        return get_collab_recommendations(user_id, anime_df, model)
+
+                    else:
+                        st.info("User is a casual watcher. Using **content-based filtering** (Cosine Similarity).")
+                        return give_rec(user_id)
+
+
+                if "cosine_sim" not in st.session_state:
+                    if "anime_df" in st.session_state:
+                        anime_df = st.session_state.anime_df
+                        combined_features = st.session_state.combined_features
+
+                        # TF-IDF Vectorization
+                        tfv = TfidfVectorizer(
+                            min_df=3, max_features=None, strip_accents="unicode",
+                            analyzer="word", token_pattern=r"\w{1,}", ngram_range=(1, 3),
+                            stop_words="english"
+                        )
+                        tfidf_matrix = tfv.fit_transform(combined_features)
+                        st.session_state.cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+                    else:
+                        st.error("❌ Anime dataset not found in session state.")  
+
+                st.header("🤖🎥 Hybrid Anime Recommender (Collab & Content-Based)")
+
+                model = st.session_state.get("model", None)
+                cosine_sim = st.session_state.get("cosine_sim", None)
+
+                if model is None or cosine_sim is None:
+                    st.error("⚠️ Model or similarity matrix not found. Please reload the app.")
+                else:
+                    user_id = st.number_input("Input User id:", min_value=1, step=1)
+
+                    if st.button("Get Hybrid Recommendations"):
+                        recommendations = get_recommendations(user_id, anime_df, model, cosine_sim)
+
+                        if recommendations is not None and not recommendations.empty:
+                            st.subheader(f"📌 Personalized Recommendations for User {user_id}")
+                            st.dataframe(recommendations)
+                        else:
+                            st.warning("❌ No recommendations found.")
 
 
