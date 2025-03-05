@@ -1,0 +1,15 @@
+artifact_uri: file:///C:/Users/bonas/streamlit-anime-recommender/Streamlit_Anime_Recommendations/mlruns/285025956801030881/4954b9937a4e4a7cb758c883fac607e5/artifacts
+end_time: 1741154608357
+entry_point_name: ''
+experiment_id: '285025956801030881'
+lifecycle_stage: active
+run_id: 4954b9937a4e4a7cb758c883fac607e5
+run_name: SVD_Model
+run_uuid: 4954b9937a4e4a7cb758c883fac607e5
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1741154608207
+status: 3
+tags: []
+user_id: bonas
