@@ -60,7 +60,7 @@ if section == "Project Introduction":
 
         st.subheader("Introduction")
         st.write("""
-        ***still to add***
+        This project is an Anime Recommendation System that provides personalized anime suggestions based on user preferences. It integrates content-based filtering and collaborative filtering to enhance recommendations. The system uses Streamlit for the user interface and MLflow for model tracking.
         """)
 
         # Objectives of the Project
