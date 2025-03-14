@@ -683,27 +683,27 @@ if section == "Exploratory Data Analysis (EDA)":
                 st.dataframe(correlation_matrix) 
 if section == "Data Preprocessing":
             st.title("Data Preprocessing")
-            # Initialize session state if not already done
+
+            # Path to the pickle file
             preprocessed_data_path = "C:\\Users\\bonas\\Downloads\\preprocessed_data.pkl"
 
             # Ensure 'preprocessed_data' is initialized in session_state
             if 'preprocessed_data' not in st.session_state:
-                st.session_state.preprocessed_data = None  # Initialize with None
+                st.session_state.preprocessed_data = None
 
-            # Check if the pickle file exists and load it
+            # Load preprocessed data if not already loaded
             if st.session_state.preprocessed_data is None:
                 if os.path.exists(preprocessed_data_path):
                     try:
                         with open(preprocessed_data_path, 'rb') as f:
-                            preprocessed_data = pickle.load(f)
-                        st.session_state.preprocessed_data = preprocessed_data
+                            st.session_state.preprocessed_data = pickle.load(f)
                         st.success("Preprocessed data loaded successfully from pickle file.")
                     except Exception as e:
                         st.error(f"Error loading preprocessed data: {e}")
                 else:
                     st.error(f"The pickle file '{preprocessed_data_path}' does not exist.")
             else:
-                st.success("Preprocessed data already loaded.")
+                st.info("Preprocessed data already loaded.")
 
 if section == "Model Development":
             st.title("Model Development")
