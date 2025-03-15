@@ -147,10 +147,10 @@ if section == "Data loading and Inspection":
         # Code for loading the data
         data_loading_code = r"""
         # Load the data
-        st.session_state.anime_df = pd.read_csv(r"C:\Users\bonas\streamlit-anime-recommender\Streamlit_Anime_Recommendations\Anime data\anime.csv")
-        st.session_state.ratings_df = pd.read_csv(r"C:\Users\bonas\streamlit-anime-recommender\Streamlit_Anime_Recommendations\Anime data\train.csv")
-        st.session_state.test_df= pd.read_csv(r"C:\Users\bonas\streamlit-anime-recommender\Streamlit_Anime_Recommendations\Anime data\test.csv")
-        st.session_state.submission_df = pd.read_csv(r"C:\Users\bonas\streamlit-anime-recommender\Streamlit_Anime_Recommendations\Anime data\submission.csv")        
+        st.session_state.anime_df = pd.read_csv(r"C:\Users\bonas\Downloads\STREAMLIT app\Streamlit_Anime_Recommendations\Anime data\anime.csv")
+                st.session_state.ratings_df = pd.read_csv(r"C:\Users\bonas\Downloads\STREAMLIT app\Streamlit_Anime_Recommendations\Anime data\train.csv")
+                st.session_state.test_df= pd.read_csv(r"C:\Users\bonas\Downloads\STREAMLIT app\Streamlit_Anime_Recommendations\Anime data\test.csv")
+                st.session_state.submission_df = pd.read_csv(r"C:\Users\bonas\Downloads\STREAMLIT app\Streamlit_Anime_Recommendations\Anime data\submission.csv")        
     
         # Display the DataFrames
         st.subheader("Preview of the DataFrames")
@@ -171,24 +171,39 @@ if section == "Data loading and Inspection":
 
 
         # Button to run the data loading process
-        if st.button("Run Data"):
+        def load_data():
             try:
-                # Load the data into session state
-                st.session_state.anime_df = pd.read_csv(r"C:\Users\bonas\Downloads\STREAMLIT app\Streamlit_Anime_Recommendations\Anime data\anime.csv")
-                st.session_state.ratings_df = pd.read_csv(r"C:\Users\bonas\Downloads\STREAMLIT app\Streamlit_Anime_Recommendations\Anime data\train.csv")
-                st.session_state.test_df= pd.read_csv(r"C:\Users\bonas\Downloads\STREAMLIT app\Streamlit_Anime_Recommendations\Anime data\test.csv")
-                st.session_state.submission_df = pd.read_csv(r"C:\Users\bonas\Downloads\STREAMLIT app\Streamlit_Anime_Recommendations\Anime data\submission.csv")
+                base_path = "Anime data"
 
-                # Store a flag in session state
+                # Relative paths
+                anime_path = os.path.join(base_path, "anime.csv")
+                ratings_path = os.path.join(base_path, "train.csv")
+                test_path = os.path.join(base_path, "test.csv")
+                submission_path = os.path.join(base_path, "submission.csv")
+
+                # Ensure files exist
+                if not all(os.path.isfile(path) for path in [anime_path, ratings_path, test_path, submission_path]):
+                    st.error("❌ One or more files are missing. Ensure all CSVs are present in the 'Anime data' directory.")
+                    return
+
+                # Load datasets into session state
+                st.session_state.anime_df = pd.read_csv(anime_path)
+                st.session_state.ratings_df = pd.read_csv(ratings_path)
+                st.session_state.test_df = pd.read_csv(test_path)
+                st.session_state.submission_df = pd.read_csv(submission_path)
+
                 st.session_state.data_loaded = True
-
                 st.success("✅ Data loaded successfully!")
 
             except Exception as e:
                 st.error(f"Error loading data: {e}")
-                st.write("Please check the file paths or ensure that the data files exist")
+                st.write("Please check if the CSV files are present in the correct location.")
 
-        # Display the DataFrames only if data is loaded
+        # Button to trigger data loading
+        if st.button("Run Data"):
+            load_data()
+
+        # Display the DataFrames if loaded
         if st.session_state.get("data_loaded", False):
             st.subheader("Preview of the DataFrames")
 
