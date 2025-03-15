@@ -1,0 +1,13 @@
+ipython==8.12.3
+ipython==8.25.0
+matplotlib==3.8.4
+mlflow==2.20.3
+mlflow_skinny==2.20.3
+numpy==2.2.3
+pandas==2.2.3
+plotly==5.22.0
+scikit_learn==1.4.2
+scikit_surprise==1.1.4
+scipy==1.15.2
+seaborn==0.13.2
+streamlit==1.32.0
