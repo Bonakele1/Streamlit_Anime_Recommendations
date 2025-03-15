@@ -95,7 +95,7 @@ def main():
             selected_anime = st.selectbox("Select Anime", anime_df['name'].values)
 
             if st.button("Get Recommended Anime"):
-                recommended_anime = get_similar_anime(selected_anime, anime_df, cosine_sim)
+                recommended_anime = get_similar_anime(selected_anime, anime_df, tfidf_matrix)
 
                 st.write("### Recommended Anime:")
                 for i, anime in enumerate(recommended_anime, 1):
