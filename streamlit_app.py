@@ -174,10 +174,10 @@ if section == "Data loading and Inspection":
         if st.button("Run Data"):
             try:
                 # Load the data into session state
-                st.session_state.anime_df = pd.read_csv(r"C:\Users\bonas\streamlit-anime-recommender\Streamlit_Anime_Recommendations\Anime data\anime.csv")
-                st.session_state.ratings_df = pd.read_csv(r"C:\Users\bonas\streamlit-anime-recommender\Streamlit_Anime_Recommendations\Anime data\train.csv")
-                st.session_state.test_df= pd.read_csv(r"C:\Users\bonas\streamlit-anime-recommender\Streamlit_Anime_Recommendations\Anime data\test.csv")
-                st.session_state.submission_df = pd.read_csv(r"C:\Users\bonas\streamlit-anime-recommender\Streamlit_Anime_Recommendations\Anime data\submission.csv")
+                st.session_state.anime_df = pd.read_csv(r"C:\Users\bonas\Downloads\STREAMLIT app\Streamlit_Anime_Recommendations\Anime data\anime.csv")
+                st.session_state.ratings_df = pd.read_csv(r"C:\Users\bonas\Downloads\STREAMLIT app\Streamlit_Anime_Recommendations\Anime data\train.csv")
+                st.session_state.test_df= pd.read_csv(r"C:\Users\bonas\Downloads\STREAMLIT app\Streamlit_Anime_Recommendations\Anime data\test.csv")
+                st.session_state.submission_df = pd.read_csv(r"C:\Users\bonas\Downloads\STREAMLIT app\Streamlit_Anime_Recommendations\Anime data\submission.csv")
 
                 # Store a flag in session state
                 st.session_state.data_loaded = True
@@ -684,79 +684,108 @@ if section == "Exploratory Data Analysis (EDA)":
 if section == "Data Preprocessing":
             st.title("Data Preprocessing")
 
-            # Path to the pickle file
-            preprocessed_data_path = "C:\\Users\\bonas\\Downloads\\preprocessed_data.pkl"
-
-            # Ensure 'preprocessed_data' is initialized in session_state
-            if 'preprocessed_data' not in st.session_state:
-                st.session_state.preprocessed_data = None
-
-            # Load preprocessed data if not already loaded
-            if st.session_state.preprocessed_data is None:
-                if os.path.exists(preprocessed_data_path):
-                    try:
-                        with open(preprocessed_data_path, 'rb') as f:
-                            st.session_state.preprocessed_data = pickle.load(f)
-                        st.success("Preprocessed data loaded successfully from pickle file.")
-                    except Exception as e:
-                        st.error(f"Error loading preprocessed data: {e}")
-                else:
-                    st.error(f"The pickle file '{preprocessed_data_path}' does not exist.")
+            # Ensure session state variables exist
+            if 'anime_df' in st.session_state and 'ratings_df' in st.session_state:
+                st.header("Data Preprocessing")
             else:
-                st.info("Preprocessed data already loaded.")
+                try:
+                    # Clean anime data
+                    anime_df = st.session_state.anime_df
+                    ratings_df = st.session_state.ratings_df
+                except Exception as e:
+                    st.error(f"Error during data cleaning: {e}")
+
+            # Preprocess function
+            def preprocess_features(df):
+                df["combined_features"] = df[["name", "genre", "type"]].fillna("").astype(str).apply(lambda x: ' '.join(x), axis=1)
+                return df
+
+            # Preprocess and store in session state
+            def preprocess_and_store():
+                anime_df = st.session_state.anime_df
+                ratings_df = st.session_state.ratings_df
+                
+                if anime_df is None or ratings_df is None:
+                    return
+                
+                # Drop duplicates
+                anime_data = anime_df.drop_duplicates(subset="name", keep="first").reset_index(drop=True)
+                anime_data = preprocess_features(anime_data)
+
+                # TF-IDF for content-based filtering
+                tfv = TfidfVectorizer(analyzer="word", stop_words="english")
+                tfidf_matrix = tfv.fit_transform(anime_data["combined_features"])
+
+                # Compute cosine similarity
+                cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+
+                # Collaborative Filtering Data Preparation
+                ratings_df.drop_duplicates(inplace=True)
+
+                # Compute mean rating per user
+                mean_rating_per_user = ratings_df.groupby("user_id").mean().reset_index()
+                mean_rating_per_user["mean_rating"] = mean_rating_per_user["rating"]
+
+                mean_rating_per_user.drop(["anime_id", "rating"], axis=1, inplace=True)
+
+                # Merge mean ratings and filter out low ratings
+                ratings_df = pd.merge(ratings_df, mean_rating_per_user, on="user_id")
+                ratings_df = ratings_df.drop(ratings_df[ratings_df["rating"] < ratings_df["mean_rating"]].index)
+
+                # Limit to users with IDs <= 6000
+                ratings_df = ratings_df[ratings_df["user_id"] <= 6000]
+
+                # Load surprise dataset
+                reader = Reader(rating_scale=(1, 10))
+                data = Dataset.load_from_df(ratings_df[['user_id', 'anime_id', 'rating']], reader)
+
+                # Split into train and test sets
+                trainset, testset = surprise_train_test_split(data, test_size=0.2, random_state=42)
+
+                # Store in session state
+                st.session_state.preprocessed_data = {
+                    "cosine_sim": cosine_sim,
+                    "anime_data": anime_data,
+                    "ratings_data": ratings_df,
+                    "trainset": trainset,
+                    "testset": testset
+                }
+                st.success("✅ Data preprocessing completed and stored in session state.")
+
+            # Run preprocessing
+            if st.button("Preprocess Data"):
+                preprocess_and_store()
+
 
 if section == "Model Development":
             st.title("Model Development")
 
-            mlflow.set_tracking_uri("http://127.0.0.1:5000")  # Adjust this if your MLflow server is remote
+            # Function to load model from a local pickle file
+            def load_model(model_path="knnbaseline_model.pkl"):
+                # Check if model is already in session state (to avoid reloading)
+                if "model" not in st.session_state:
+                    if not os.path.isfile(model_path):
+                        st.error(f"Model file '{model_path}' not found.")
+                        return None
+                    
+                    try:
+                        with open(model_path, "rb") as model_file:
+                            st.session_state.model = pickle.load(model_file)  # Store model in session state
+                        st.success(f"Model '{model_path}' loaded successfully!")
+                    except Exception as e:
+                        st.error(f"Error loading model: {e}")
+                        st.session_state.model = None
 
-            @st.cache_resource  # Cache to speed up loading
-            def load_model(experiment_name, model_filename="knnbaseline_model.pkl"):
-                # Get experiment
-                experiment = mlflow.get_experiment_by_name(experiment_name)
-                if not experiment:
-                    st.error(f"Experiment '{experiment_name}' not found.")
-                    return None
+                return st.session_state.model
 
-                # Get latest completed run
-                runs = mlflow.search_runs(experiment_ids=[experiment.experiment_id], filter_string="status='FINISHED'")
-                if runs.empty:
-                    st.error("No successful runs found for this experiment.")
-                    return None
-
-                latest_run = runs.iloc[0]
-                
-                # Get the artifact path
-                artifact_path = f"runs:/{latest_run.run_id}/{model_filename}"
-
-                # Download the artifact (fix path issue)
-                local_path = mlflow.artifacts.download_artifacts(artifact_path)
-
-                # Check if file exists
-                if not os.path.exists(local_path):
-                    st.error(f"Model file '{model_filename}' not found in MLflow.")
-                    return None
-
-                # Load the model
-                with open(local_path, "rb") as model_file:
-                    model = pickle.load(model_file)
-
-                return model
-
-            if "model" not in st.session_state:
-                # Load model and store it in session_state
-                model = load_model(experiment_name="KNNBaseline_Model")
-                if model:
-                    st.session_state.model = model  # Save model in session_state
-                    st.success("✅ Model successfully loaded and saved in session_state.")
-                else:
-                    st.error("⚠️ Model could not be loaded. Check MLflow server and logs.")
+            # Load the model once and store it in session state
+            model = load_model("knnbaseline_model.pkl")
 
 
 if section == "Making Recomendations":
             st.title("Making Recomendations") 
 
-            options =  ["Content-Based Anime Recommender", "Collaboration Filtering Anime Recommender", "Hybrid Recommender (Content and Collab)"]
+            options =  ["Content-Based Anime Recommender", "Collaboration Filtering Anime Recommender"]
             part = st.sidebar.selectbox("Recommmender Options", options)
 
             if part == "Content-Based Anime Recommender":
@@ -905,31 +934,6 @@ if section == "Making Recomendations":
                             st.info("User is a casual watcher. Using **content-based filtering** (Cosine Similarity).")
                             return give_rec(user_id)
                         
-            if part == "Hybrid Recommender (Content and Collab)":
-                st.header("🤖 Hybrid Anime Recommender (Collab & Content-Based)")
-
-
-                # Load Model & Preprocessed Data into Session State if not already loaded
             
-
-                cosine_sim = st.session_state.preprocessed_data.get("cosine_sim") if st.session_state.preprocessed_data else None
-
-                model = st.session_state.model
-                
-
-                # Check if model and similarity matrix are loaded
-                if model is None or cosine_sim is None:
-                    st.error("⚠️ Model or similarity matrix not found. Please reload the app.")
-                else:
-                    user_id = st.number_input("Input User ID:", min_value=1, step=1)
-
-                    if st.button("Get Hybrid Recommendations"):
-                        recommendations = get_recommendations(user_id, anime_df, model, cosine_sim)
-
-                        if recommendations is not None and not recommendations.empty:
-                            st.subheader(f"📌 Personalized Recommendations for User {user_id}")
-                            st.dataframe(recommendations)
-                        else:
-                            st.warning("❌ No recommendations found.")
 
                  
