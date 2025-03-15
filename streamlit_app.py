@@ -760,7 +760,7 @@ if section == "Data Preprocessing":
 if section == "Model Development":
             st.title("Model Development")
 
-            # Function to load model from a local pickle file
+            @st.cache_resource  # Cache the model object
             def load_model(model_path="knnbaseline_model.pkl"):
                 # Check if model is already in session state (to avoid reloading)
                 if "model" not in st.session_state:
