@@ -7,42 +7,53 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 @st.cache_resource
-def load_model_data(): 
+def load_data(): 
+    
+    # Load CSV files
+    train_df = pd.read_csv("train.csv")
+    anime_df = pd.read_csv("combined_anime.csv")
+    tfidf_matrix = pd.read_csv("tfidf_matrix_df.csv")
+
+    return train_df, anime_df, tfidf_matrix
+
+@st.cache_resource
+def load_model():
+
     # Load the SVD model
     with open("knnbaseline_model.pkl", "rb") as f: 
         model = pickle.load(f) 
 
-    # Load CSV files
-    train_df = pd.read_csv("train.csv")
-    anime_df = pd.read_csv("combined_anime.csv")
-
-    return model, train_df, anime_df
+    return model
 
 # Load all resources
-model, train_df, anime_df = load_model_data()
+train_df, anime_df, tfidf_matrix = load_data()
+model = load_model()
 
 
-tfv = TfidfVectorizer(analyzer="word", stop_words="english")
-tfidf_matrix = tfv.fit_transform(anime_df["combined_features"].fillna(""))
-cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+def get_similar_anime(input_anime, anime_df, tfidf_matrix, top_n=10):
+    # Verify if the anime exists in the dataset
+    if input_anime not in anime_df['name'].values:
+        return None
 
-def get_similar_anime(title, anime_df, cosine_sim):
-    if title not in anime_df["name"].values:
-        return ["Anime not found in dataset."]
+    # Find the index of the input anime in the DataFrame
+    input_anime_idx = anime_df.index[anime_df['name'] == input_anime].tolist()[0]
 
-    idx = anime_df[anime_df["name"] == title].index[0]
-    similarity_scores = list(enumerate(cosine_sim[idx]))
-    similarity_scores = sorted(similarity_scores, key=lambda x: x[1], reverse=True)
+    # Extract the TF-IDF vector for the input anime
+    input_vector = tfidf_matrix.iloc[input_anime_idx, :-1].values.reshape(1, -1)
 
-    # Get Top 10 Most Similar Anime (excluding itself)
-    top_anime = [anime_df.iloc[i[0]]["name"] for i in similarity_scores[1:11]]
+    # Compute cosine similarities between the input anime and all other animes
+    similarities = cosine_similarity(input_vector, tfidf_matrix.iloc[:, :-1]).flatten()
 
-    return top_anime if top_anime else ["No similar anime found."]
+    # Identify the indices of the top N most similar animes, excluding the input itself
+    similar_anime_indices = similarities.argsort()[-(top_n + 1):][::-1][1:]
 
-best_anime = anime_df.sort_values(by='rating',ascending=False).head(10)
-best_anime = best_anime['anime_id'].tolist()
+    # Return the names of the top N most similar animes
+    return anime_df.loc[similar_anime_indices, 'name'].tolist()
+
 
 def collaborative_filtering(user_id, n=10):
+    best_anime = anime_df.sort_values(by='rating',ascending=False).head(10)
+    best_anime = best_anime['anime_id'].tolist()
     # Get unique anime IDs
     anime_ids = anime_df['anime_id'].unique()
 
