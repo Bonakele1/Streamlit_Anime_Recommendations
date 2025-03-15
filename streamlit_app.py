@@ -186,7 +186,7 @@ if section == "Data loading and Inspection":
 
             except Exception as e:
                 st.error(f"Error loading data: {e}")
-                st.write("Please check the file paths or ensure that the data files exist.")
+                st.write("Please check the file paths or ensure that the data files exist")
 
         # Display the DataFrames only if data is loaded
         if st.session_state.get("data_loaded", False):
