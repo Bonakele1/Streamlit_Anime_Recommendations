@@ -1,6 +1,6 @@
 ipython
 ipython
-python
+cython
 matplotlib
 mlflow
 mlflow_skinny
