@@ -6,6 +6,26 @@ import pickle
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 
+page_bg_ing = f"""
+<style>
+
+.st-emotion-cache-1r4qj8v {{
+    background-image: url("https://cdn-images.dzcdn.net/images/cover/ddc82d56f4ff586b15a2b6affe632ed0/500x500-000000-80-0-0.jpg");
+    background-size: cover;
+}}
+
+[data-testid="stSidebar"] {{
+background-color: FFFDD0; 
+}}
+
+stButton>button {{
+background-color: #E6E6FA;
+}}
+
+</style>
+"""
+st.markdown(page_bg_ing, unsafe_allow_html=True)
+
 @st.cache_resource
 def load_data(): 
     
@@ -81,10 +101,36 @@ def collaborative_filtering(user_id, n=10):
 
 def main():
     st.sidebar.title("Menu")
-    section = st.sidebar.radio(" ", ["Making Recommendations"])
+    section = st.sidebar.radio(" ", ["About", "Anime Recommendations"])
 
-    if section == "Making Recommendations":
-        st.title("Making Recommendations")
+    if section == "About":
+        st.title("👋Hey! Welcome to the family😊") 
+        st.write("### Want to find the Best Anime?? You are at the right place!")
+        st.markdown("""
+        <div style="padding-left: 80px; font-size: 20px;"> 
+        We offer Only the best recommendations there could ever be. 
+        </div> 
+        <div style="padding-left: 120px; font-size: 20px;">
+        ALL based on your ratings as the Anime watcher.
+        </div>
+        <div style="padding-left: 40px; font-size: 20px;">
+        Do you want to watch something closer to what you have watched recently. 
+        <div style="padding-left: 40px; font-size: 20px;">
+        go on and click 'Content-based-Anime' and select your fav Anime.
+        </div> 
+        <div style="padding-left: 80px; font-size: 20px;">
+        You Want to watch something other similar users watch 
+        </div>
+        <div style="padding-left: 70px; font-size: 20px;">
+        go on and click 'Collaborative-filtering' and select your user id
+        </div>
+        <div style="padding-left: 170px; font-size: 20px;">     
+        From me to you🫵 only the best👌
+        </div>       
+        """, unsafe_allow_html=True)
+
+    elif section == "Anime Recommendations":
+        st.title("Anime Recommendations")
 
         options = ["Content-Based Anime Recommender", "Collaboration Filtering Anime Recommender"]
         part = st.sidebar.selectbox("Recommender Options", options)
@@ -97,7 +143,7 @@ def main():
             if st.button("Get Recommended Anime"):
                 recommended_anime = get_similar_anime(selected_anime, anime_df, tfidf_matrix)
 
-                st.write("### Recommended Anime:")
+                st.write("### Similar Anime:")
                 for i, anime in enumerate(recommended_anime, 1):
                     st.write(f"{i}. {anime}")
 
@@ -109,9 +155,12 @@ def main():
             if st.button("Get Recommended Anime"):
                 recommendations = collaborative_filtering(selected_user)
 
-                st.write("### Recommended Anime:")
+                st.write("### Similar User Anime:")
                 for i, anime in enumerate(recommendations):
                     st.write(f"{i+1}. {anime}")
+
+        
+                       
 if __name__ == "__main__":
     main()
 
