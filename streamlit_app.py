@@ -15,7 +15,7 @@ page_bg_ing = f"""
 }}
 
 [data-testid="stSidebar"] {{
-background-color: FFFDD0; 
+background-color: #b9babd; 
 }}
 
 stButton>button {{
